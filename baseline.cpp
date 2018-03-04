@@ -23,6 +23,11 @@ int main ( int argc, char *argv[] )
   MPI::Status status;
   int tag = 1;
 
+  bool rightAvailable;
+  bool leftAvailable;
+  bool used = true; // Every file (fork) is 'used' initially
+
+
   //  Initialize MPI.
   MPI::Init ( argc, argv );
 
@@ -32,11 +37,26 @@ int main ( int argc, char *argv[] )
   //  Determine the rank of this process.
   id = MPI::COMM_WORLD.Get_rank ( );
   
+  // Initialize availability 
+  if (id == 0) {
+    // 0th process doesn't start with any forks :(
+    rightAvailable = false;
+    leftAvailable = false;
+  } else if (id == p - 1) {
+    // The last process gets both forks
+    rightAvailable = true;
+    leftAvailable = true;
+  } else {
+    // Every other process gets the left fork
+    rightAvailable = false;
+    leftAvailable = true;
+  }
+
   //Safety check - need at least 2 philosophers to make sense
   if (p < 2) {
-	    MPI::Finalize ( );
-	    std::cerr << "Need at least 2 philosophers! Try again" << std::endl;
-	    return 1; //non-normal exit
+    MPI::Finalize ( );
+    std::cerr << "Need at least 2 philosophers! Try again" << std::endl;
+    return 1; //non-normal exit
   }
 
   srand(id + time(NULL)); //ensure different seeds...
@@ -57,19 +77,19 @@ int main ( int argc, char *argv[] )
 
   while (numWritten < MAXMESSAGES) {
     //send 1 test message to each neighbor
-    	msgOut = rand() % p; //pick a number/message
+    msgOut = rand() % p; //pick a number/message
 	MPI::COMM_WORLD.Send ( &msgOut, 1, MPI::INT, leftNeighbor, tag ); 
-    	msgOut = rand() % p; //pick a new number/message
+    msgOut = rand() % p; //pick a new number/message
 	MPI::COMM_WORLD.Send ( &msgOut, 1, MPI::INT, rightNeighbor, tag ); 
         
     //receive 1 test message from each neighbor
 	MPI::COMM_WORLD.Recv ( &msgIn, 1, MPI::INT, MPI::ANY_SOURCE, tag, status );
-//	std::cout << "Receiving message " << msgIn << " from Philosopher ";
-//	std::cout << status.Get_source() << std::endl;
+	std::cout << "Receiving message " << msgIn << " from Philosopher ";
+	std::cout << status.Get_source() << std::endl;
 
 	MPI::COMM_WORLD.Recv ( &msgIn, 1, MPI::INT, MPI::ANY_SOURCE, tag, status );
-//	std::cout << "Receiving message " << msgIn << " from Philosopher ";
-//	std::cout << status.Get_source() << std::endl;	
+	std::cout << "Receiving message " << msgIn << " from Philosopher ";
+	std::cout << status.Get_source() << std::endl;	
 
 	//LET'S JUST IGNORE THE MESSAGES AND ASSUME IT'S SAFE TO WRITE TO THE FILE!
     //std::cout << "ID: " << id << " CARELESSLY writing to " << lFile << " and " << rFile << endl;
