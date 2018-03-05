@@ -34,9 +34,9 @@ int main ( int argc, char *argv[] )
   MPI::Status status;
   int tag = 1;
 
-  bool rightAvailable;
-  bool leftAvailable;
-  bool used = true; // Every file (fork) is 'used' initially
+  bool rightAvailable; // my right fork's (file's) availability
+  bool leftAvailable; // my left fork's availability 
+  bool used = true; // Every fork is 'used' initially
 
 
   //  Initialize MPI.
@@ -48,17 +48,17 @@ int main ( int argc, char *argv[] )
   //  Determine the rank of this process.
   id = MPI::COMM_WORLD.Get_rank ( );
 
-  // Initialize availability
+  // Initialize availability depending on the phil's ID
   if (id == 0) {
-    // 0th process doesn't start with any forks :(
+    // 0th phil doesn't start with any forks :(
     rightAvailable = false;
     leftAvailable = false;
   } else if (id == p - 1) {
-    // The last process gets both forks
+    // The last phil gets both forks
     rightAvailable = true;
     leftAvailable = true;
   } else {
-    // Every other process gets the left fork
+    // Every other phil gets their left fork
     rightAvailable = false;
     leftAvailable = true;
   }
@@ -76,7 +76,7 @@ int main ( int argc, char *argv[] )
 
   //setup message storage locations
   int msgIn, msgOut;
-  int leftNeighbor = (id == 0 ? p - 1 : id - 1);
+  int leftNeighbor = (id == 0 ? p - 1 : id - 1); // compute left neighbor by getting the previous phil's ID (includes wrap-around)
   int rightNeighbor = (id + 1) % p;
 
   pomerize P;
@@ -88,6 +88,9 @@ int main ( int argc, char *argv[] )
 
   while (numWritten < MAXMESSAGES) {
     if (!(leftAvailable && rightAvailable && used)) {
+
+      // At this point, we can't write to our files. Ask for access
+
       if (!leftAvailable) {
         // Request left fork
         cout << "Phil " << id << " is requesting left" << endl << endl;
@@ -97,9 +100,12 @@ int main ( int argc, char *argv[] )
         MPI::COMM_WORLD.Recv(&msgIn, 1, MPI::INT, leftNeighbor, tag, status);
 
         if (msgIn == EXIT) {
+          // The phil to our left is finished writing. We no longer need to relinquish our left fork when we're finished,
+          // so we say it's not available
           cout << "Phil " << id << " got exit message from " << leftNeighbor << endl << endl;
           leftAvailable = false;
         } else {
+          // Business as usual. We received notice that we can use our left fork
           cout << "Phil " << id << " got left" << endl << endl;
           leftAvailable = true;
         }
@@ -123,9 +129,9 @@ int main ( int argc, char *argv[] )
       }
     }
 
-    used = false;
+    used = false; // We have not yet 'used' our forks
 
-    /* WRITE */
+    /* BEGIN WRITE */
     //construct poem & output stanzas into the files 'simultaneously'
     //we do this with an intermediate variable so both files contain the same poem!
     string stanza1, stanza2, stanza3;
@@ -144,7 +150,7 @@ int main ( int argc, char *argv[] )
     cout << "************Phil " << id << " has written " << numWritten << " times" << endl << endl;
     /* END WRITE */
 
-    used = true;
+    used = true; // We have 'used' our forks
 
     // Handle message requests
     while (leftAvailable || rightAvailable) {
@@ -154,14 +160,18 @@ int main ( int argc, char *argv[] )
 
       if (status.Get_source() == leftNeighbor) {
         leftAvailable = false;
+
+        // Determine if we're finished sending messages or not
         msgOut = (numWritten == MAXMESSAGES ? EXIT : NOTIFY);
 
         cout << "Phil " << id << " relinquishing left..." << endl << endl;
         MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, leftNeighbor, tag);
         cout << "Phil " << id << " relinquished left!" << endl << endl;
       }
+
       else if (status.Get_source() == rightNeighbor) {
         rightAvailable = false;
+
         msgOut = (numWritten == MAXMESSAGES ? EXIT : NOTIFY);
 
         cout << "Phil " << id << " relinquishing right..." << endl << endl;
@@ -169,7 +179,6 @@ int main ( int argc, char *argv[] )
         cout << "Phil " << id << " relinquished right!" << endl << endl;
       }
     }
-
   }
 
   foutLeft.close();
