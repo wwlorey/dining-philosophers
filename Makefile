@@ -12,4 +12,4 @@ clean:
 	rm -f *.o program outFile*
 
 start:
-	mpirun -np 5 ./program
+	mpirun -np 3 ./program
