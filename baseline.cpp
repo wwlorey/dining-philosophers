@@ -14,8 +14,6 @@
 
 #define STARS "********"
 
-// run compiled code (for 5 Phils) with mpirun -n 5 program
-
 // Constant declarations
 const unsigned int REQUEST = 0;
 const unsigned int NOTIFY = 1;
@@ -31,8 +29,8 @@ const string fileBase = "outFile";
 
 int main(int argc, char *argv[])
 {
-  int id; //my MPI ID
-  int p;  //total MPI processes
+  int id; // my MPI ID
+  int p;  // total MPI processes
   MPI::Status status;
   int tag = 1;
   int source;
@@ -72,24 +70,24 @@ int main(int argc, char *argv[])
   }
   else
   {
-    // Every other phil gets their left fork
+    // Every other phil gets only their left fork
     rightAvailable = false;
     leftAvailable = true;
   }
 
-  //Safety check - need at least 2 philosophers to make sense
+  // Safety check - need at least 2 philosophers to make sense
   if (p < 2)
   {
     MPI::Finalize();
     std::cerr << "Need at least 2 philosophers! Try again" << std::endl;
-    return 1; //non-normal exit
+    return 1; // non-normal exit
   }
 
-  srand(id + time(NULL)); //ensure different seeds...
+  srand(id + time(NULL)); // ensure different seeds...
 
   int numWritten = 0;
 
-  //setup message storage locations
+  // setup message storage locations
   int msgIn, msgOut;
   int leftNeighbor = (id == 0 ? p - 1 : id - 1); // compute left neighbor by getting the previous phil's ID (includes wrap-around)
   int rightNeighbor = (id + 1) % p;
@@ -111,11 +109,14 @@ int main(int argc, char *argv[])
     stanza3 = P.getLine();
 
     // Message Handler
+    // While there is a message to be received...
     while (MPI::COMM_WORLD.Iprobe(MPI::ANY_SOURCE, tag))
     {
       foundAny = true;
+
       // cout << "Phil " << id << " is receiving a message..." << endl;
-      MPI::COMM_WORLD.Recv(&msgIn, 1, MPI::INT, MPI::ANY_SOURCE, tag, status); // either neighbor
+
+      MPI::COMM_WORLD.Recv(&msgIn, 1, MPI::INT, MPI::ANY_SOURCE, tag, status);
       source = status.Get_source();
 
       // cout << "Phil " << id << " received message " << msgIn << " from " << source << endl;
@@ -124,62 +125,57 @@ int main(int argc, char *argv[])
       {
         if (msgIn == EXIT)
         {
-          // The phil to our left is finished writing. We no longer need to relinquish our left fork when we're finished,
-          // so we say it's not available
+          // The phil to our left is finished writing. We no longer need to relinquish our left fork when we're finished, so we say it's available
           // cout << "Phil " << id << " got exit message from " << source << endl;
           leftAvailable = true;
           leftDone = true;
-          leftUsed = false;
         }
+
         else if (msgIn == NOTIFY)
         {
           // Business as usual. We received notice that we can use our left fork
           // cout << "Phil " << id << " got left fork from " << source << endl;
           leftAvailable = true;
-          leftUsed = false;
         }
-        else
+
+        else if (leftUsed && leftAvailable) // Assume msgIn == REQUEST
         {
           // cout << "Phil " << id << " got message from " << source << " requesting left fork" << endl;
-          if (leftUsed && leftAvailable)
-          {
-            msgOut = NOTIFY;
-            MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, leftNeighbor, tag);
-            leftAvailable = leftUsed = false;
-          }
+          msgOut = NOTIFY;
+          MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, leftNeighbor, tag);
+          leftAvailable = false;
         }
+
+        leftUsed = false;
       }
+
       else if (source == rightNeighbor)
       {
         // cout << "Phil " << id << " received message " << msgIn << " from " << source << endl;
         if (msgIn == EXIT)
         {
-          // The phil to our left is finished writing. We no longer need to relinquish our left fork when we're finished,
-          // so we say it's not available
+          // The phil to our left is finished writing. We no longer need to relinquish our left fork when we're finished, so we say it's available
           // cout << "Phil " << id << " got exit message from " << source << endl;
           rightAvailable = true;
           rightDone = true;
-          rightUsed = false;
         }
+
         else if (msgIn == NOTIFY)
         {
           // Business as usual. We received notice that we can use our left fork
           // cout << "Phil " << id << " got right fork from " << source << endl;
           rightAvailable = true;
-          rightUsed = false;
         }
-        else
+
+        else if (rightUsed && rightAvailable) // Assume msgIn == REQUEST
         {
           // cout << "Phil " << id << " got message from " << source << " requesting fork" << endl;
-
-          // Don't give up our fork if we haven't had a chance to use it
-          if (rightUsed && rightAvailable)
-          {
-            msgOut = NOTIFY;
-            MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, rightNeighbor, tag);
-            rightAvailable = rightUsed = false;
-          }
+          msgOut = NOTIFY;
+          MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, rightNeighbor, tag);
+          rightAvailable = false;
         }
+
+        rightUsed = false;
       }
       else
       {
@@ -187,7 +183,7 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (!foundAny)
+    if (!foundAny) // We have *not* found a message to receive (during this iteration of the loop)
     {
       // cout << "Phil " << id << " sees no messages!" << endl;
 
@@ -219,17 +215,21 @@ int main(int argc, char *argv[])
         // Notify our neighbors that we are done writing to our files or exiting
         if (numWritten == MAXMESSAGES)
         {
-          // We want this to be blocking, so we can assure that our neighbors know we are exiting
+          // We want this to be blocking, so we can ensure that our neighbors know we are exiting
           msgOut = EXIT;
+
           if (!rightDone)
             MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, rightNeighbor, tag);
 
           if (!leftDone)
             MPI::COMM_WORLD.Send(&msgOut, 1, MPI::INT, leftNeighbor, tag);
         }
+
         else
         {
           msgOut = NOTIFY;
+
+          // These sends shouldn't be blocking because if our neighbor isn't ready yet, we shouldn't give up our forks
           if (!rightDone)
           {
             MPI::COMM_WORLD.Isend(&msgOut, 1, MPI::INT, rightNeighbor, tag);
@@ -241,17 +241,14 @@ int main(int argc, char *argv[])
             MPI::COMM_WORLD.Isend(&msgOut, 1, MPI::INT, leftNeighbor, tag);
             leftAvailable = leftUsed = false;
           }
-          // rightAvailable = false;
-          // leftAvailable = false;
-
-          // MPI::COMM_WORLD.Isend(&msgOut, 1, MPI::INT, rightNeighbor, tag);
-          // rightAvailable = false;
-          // MPI::COMM_WORLD.Isend(&msgOut, 1, MPI::INT, leftNeighbor, tag);
-          // leftAvailable = false;
         }
       }
-      else
+
+      else // We don't have either our left fork OR right fork
       {
+        // Request our forks
+        // Sends here should be blocking because what else is a phil to do while it waits for forks...
+
         if (!leftAvailable)
         {
           msgOut = REQUEST;
@@ -268,14 +265,14 @@ int main(int argc, char *argv[])
           // cout << "Phil " << id << " sent request for right!" << endl;
         }
       }
+
       // cout << "Phil " << id << " sees no messages from Phil " << leftNeighbor << "!" << endl;
+
     }
   }
 
   foutLeft.close();
   foutRight.close();
-
-  // sleep(p);
 
   cout << STARS << "Phil " << id << " is finalizing" << STARS << endl;
 
