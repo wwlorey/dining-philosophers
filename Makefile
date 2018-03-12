@@ -13,3 +13,6 @@ clean:
 
 start:
 	mpirun -np 10 ./program
+
+check:
+	python3 check.py
