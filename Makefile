@@ -12,9 +12,13 @@ clean:
 	rm -f *.o program outFile*
 
 start:
-	mpirun -np 5 ./program
+	mpirun -np 3 ./program
 
 check:
 	python3 check.py
 
-test: | clean run start  check
+test: | clear_console clean run start check
+
+clear_console:
+	clear 
+
